@@ -1,4 +1,4 @@
-# Firebase App Hosting configuration for GiftCash.
+# Firebase App Hosting configuration for Occasion.ng.
 # Public Firebase web config is intentionally exposed to the browser via
 # NEXT_PUBLIC_* variables. Server Admin SDK uses App Hosting default credentials;
 # do not commit service-account private keys.
@@ -58,6 +58,12 @@ env:
 
   - variable: FIREBASE_AUTH_PROJECT_ID
     value: "giftcash-d0f57"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_APP_URL
+    value: "https://occasion.ng"
     availability:
       - BUILD
       - RUNTIME
