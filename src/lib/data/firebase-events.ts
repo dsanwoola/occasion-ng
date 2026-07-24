@@ -5,6 +5,7 @@ import { buildSeed } from "./seed";
 import { calculatePlatformFee } from "../monetization";
 import type { EventGuest, EventTable, EventTicket, EventTicketType, GiftEvent, RsvpStatus } from "../types";
 import type { CreateEventInput } from "./repo-types";
+import { HttpError } from "./server-store";
 
 const slugify = (name: string) =>
   `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "event"}-${nanoid(6)}`;
@@ -84,14 +85,14 @@ async function saveEvent(event: GiftEvent) {
 
 async function requireEvent(slug: string): Promise<GiftEvent> {
   const event = await getFirebaseEvent(slug);
-  if (!event) throw new Error("Event not found");
+  if (!event) throw new HttpError(404, "Event not found");
   return event;
 }
 
 function ticketType(event: GiftEvent, ticketTypeId: string): EventTicketType {
   const type = event.ticketTypes?.find((t) => t.id === ticketTypeId && t.active);
-  if (!type) throw new Error("Ticket type not available.");
-  if (type.sold >= type.quantity) throw new Error("This ticket type is sold out.");
+  if (!type) throw new HttpError(400, "Ticket type not available.");
+  if (type.sold >= type.quantity) throw new HttpError(409, "This ticket type is sold out.");
   return type;
 }
 
@@ -101,9 +102,14 @@ function firstTable(event: GiftEvent): EventTable | undefined {
 
 export async function rsvpToEvent(slug: string, input: { name: string; email?: string; phone?: string; plusOnes?: number; status?: RsvpStatus; notes?: string; tableId?: string }): Promise<{ event: GiftEvent; guest: EventGuest; passUrl: string }> {
   const event = await requireEvent(slug);
+  const name = cleanText(input.name);
+  if (name.length < 2) throw new HttpError(400, "Guest name is required.");
+  if (input.tableId && !(event.tables ?? []).some((table) => table.id === input.tableId)) {
+    throw new HttpError(400, "Selected table does not exist.");
+  }
   const guest: EventGuest = {
     id: `guest_${nanoid(10)}`,
-    name: cleanText(input.name, "Guest"),
+    name,
     email: input.email?.trim() || undefined,
     phone: input.phone?.trim() || undefined,
     rsvpStatus: input.status ?? "yes",
@@ -128,9 +134,15 @@ export async function rsvpToEvent(slug: string, input: { name: string; email?: s
 
 export async function purchaseTicket(slug: string, input: { ticketTypeId: string; buyerName: string; buyerEmail?: string; quantity?: number; tableId?: string }): Promise<{ event: GiftEvent; ticket: EventTicket; guests: EventGuest[] }> {
   const event = await requireEvent(slug);
+  const buyerName = cleanText(input.buyerName);
+  if (buyerName.length < 2) throw new HttpError(400, "Ticket holder name is required.");
+  if (!cleanText(input.ticketTypeId)) throw new HttpError(400, "Ticket type is required.");
+  if (input.tableId && !(event.tables ?? []).some((table) => table.id === input.tableId)) {
+    throw new HttpError(400, "Selected table does not exist.");
+  }
   const type = ticketType(event, input.ticketTypeId);
   const quantity = Math.max(1, Math.min(20, Number(input.quantity) || 1));
-  if (type.sold + quantity > type.quantity) throw new Error("Not enough tickets left.");
+  if (type.sold + quantity > type.quantity) throw new HttpError(409, "Not enough tickets left.");
   const qrCode = `OCC-${slug}-${nanoid(14)}`;
   const grossAmount = type.price * quantity;
   const fee = calculatePlatformFee(grossAmount, "tickets", event.revenuePlan, type.currency);
@@ -138,7 +150,7 @@ export async function purchaseTicket(slug: string, input: { ticketTypeId: string
     id: `ticket_${nanoid(10)}`,
     eventSlug: slug,
     ticketTypeId: type.id,
-    buyerName: cleanText(input.buyerName, "Ticket buyer"),
+    buyerName,
     buyerEmail: input.buyerEmail?.trim() || undefined,
     quantity,
     totalAmount: grossAmount,
@@ -177,10 +189,11 @@ export async function purchaseTicket(slug: string, input: { ticketTypeId: string
 
 export async function checkInPass(slug: string, input: { code: string }): Promise<{ event: GiftEvent; status: "valid" | "already_used"; guest?: EventGuest; ticket?: EventTicket }> {
   const event = await requireEvent(slug);
-  const code = input.code.trim();
+  const code = cleanText(input.code);
+  if (!code) throw new HttpError(400, "Pass code is required.");
   const ticket = event.tickets?.find((t) => t.qrCode === code || t.id === code);
   const guest = event.guests?.find((g) => g.inviteCode === code || g.id === code || (ticket?.guestIds ?? []).includes(g.id));
-  if (!ticket && !guest) throw new Error("Invalid pass code.");
+  if (!ticket && !guest) throw new HttpError(404, "Invalid pass code.");
   if (ticket?.checkedInAt || guest?.checkedInAt) return { event, status: "already_used", guest, ticket };
   const now = new Date().toISOString();
   const guests = (event.guests ?? []).map((g) => guest && g.id === guest.id ? { ...g, checkedInAt: now, rsvpStatus: "checked_in" as const } : g);
@@ -191,13 +204,22 @@ export async function checkInPass(slug: string, input: { code: string }): Promis
 
 export async function assignGuestToTable(slug: string, input: { guestId: string; tableId?: string }): Promise<{ event: GiftEvent; guest?: EventGuest }> {
   const event = await requireEvent(slug);
-  const guests = (event.guests ?? []).map((guest) => guest.id === input.guestId ? { ...guest, tableId: input.tableId } : guest);
+  const guestId = cleanText(input.guestId);
+  if (!guestId) throw new HttpError(400, "Guest ID is required.");
+  const existingGuest = (event.guests ?? []).find((guest) => guest.id === guestId);
+  if (!existingGuest) throw new HttpError(404, "Guest not found.");
+  const targetTable = input.tableId ? (event.tables ?? []).find((table) => table.id === input.tableId) : undefined;
+  if (input.tableId && !targetTable) throw new HttpError(400, "Selected table does not exist.");
+  if (targetTable && !targetTable.assignedGuestIds.includes(guestId) && targetTable.assignedGuestIds.length >= targetTable.capacity) {
+    throw new HttpError(409, "Selected table is full.");
+  }
+  const guests = (event.guests ?? []).map((guest) => guest.id === guestId ? { ...guest, tableId: input.tableId } : guest);
   const tables = (event.tables ?? []).map((table) => ({
     ...table,
     assignedGuestIds: table.id === input.tableId
-      ? [...new Set([...table.assignedGuestIds.filter((id) => id !== input.guestId), input.guestId])]
-      : table.assignedGuestIds.filter((id) => id !== input.guestId),
+      ? [...new Set([...table.assignedGuestIds.filter((id) => id !== guestId), guestId])]
+      : table.assignedGuestIds.filter((id) => id !== guestId),
   }));
   const updated = await saveEvent({ ...event, guests, tables });
-  return { event: updated, guest: guests.find((guest) => guest.id === input.guestId) };
+  return { event: updated, guest: guests.find((guest) => guest.id === guestId) };
 }
