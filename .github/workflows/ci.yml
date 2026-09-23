@@ -21,5 +21,7 @@ jobs:
         run: npm ci
       - name: Run lint
         run: npm run lint
+      - name: Test Flutterwave relay authentication
+        run: npm run test:flutterwave-relay
       - name: Build Next.js app
         run: npm run build
