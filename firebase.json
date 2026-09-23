@@ -5,7 +5,7 @@
   },
   "apphosting": [
     {
-      "backendId": "occasion",
+      "backendId": "giftcash",
       "rootDir": ".",
       "ignore": [
         "node_modules",
