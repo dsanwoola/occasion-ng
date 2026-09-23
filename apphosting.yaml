@@ -67,3 +67,8 @@ env:
     availability:
       - BUILD
       - RUNTIME
+
+  - variable: OCCASION_FLUTTERWAVE_RELAY_SECRET
+    secret: OCCASION_FLUTTERWAVE_RELAY_SECRET
+    availability:
+      - RUNTIME

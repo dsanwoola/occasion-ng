@@ -10,7 +10,8 @@
     "firestore:bootstrap": "node scripts/bootstrap-firestore-schema.mjs",
     "payments:simulate": "node scripts/simulate-payments.mjs",
     "payments:forward-agentmail": "node scripts/agentmail-bank-alert-forwarder.mjs",
-    "test:leaderboard": "node --experimental-strip-types --test tests/contributor-leaderboard.test.ts"
+    "test:leaderboard": "node --experimental-strip-types --test tests/contributor-leaderboard.test.ts",
+    "test:flutterwave-relay": "node --experimental-strip-types --test tests/flutterwave-relay.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -21,8 +22,8 @@
     "firebase-admin": "^13.10.0",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.18.0",
-    "nanoid": "^5.1.11",
-    "next": "16.2.9",
+    "nanoid": "^6.0.1",
+    "next": "^16.3.6",
     "qrcode.react": "^4.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -38,7 +39,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "^16.3.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
